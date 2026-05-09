@@ -31,14 +31,16 @@ in the repo, or the [latest release](https://github.com/ksharma-xyz/KRAIL-API-PR
 
 ```
 proto/
-└── api/
-    ├── trip.proto              JourneyList + screen-shaped trip results
+├── api/
+│   └── trip.proto              JourneyList + screen-shaped trip results
+└── data/
     ├── stops_dataset.proto     Versioned stops dataset distributed via Releases
     └── routes_dataset.proto    Versioned routes dataset distributed via Releases
 ```
 
-Future shared types (e.g. `LatLng`, `TransitLine` if reused across schemas)
-will move to `proto/core/`. For now everything lives under `proto/api/`.
+Each package has its own directory (`api/` for `app.krail.bff.proto`,
+`data/` for `app.krail.bff.proto.data`). Future shared types will land
+under `proto/core/`.
 
 ## License
 

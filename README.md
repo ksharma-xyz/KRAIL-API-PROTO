@@ -15,14 +15,16 @@ no generated code in this repo.
 
 ```
 proto/
-└── api/
-    ├── trip.proto              JourneyList + screen-shaped trip results
+├── api/
+│   └── trip.proto              JourneyList + screen-shaped trip results
+└── data/
     ├── stops_dataset.proto     Versioned stops dataset distributed via Releases
     └── routes_dataset.proto    Versioned routes dataset distributed via Releases
 ```
 
-Future shared types (e.g. `LatLng`, `TransitLine`) will move to `proto/core/`
-when more than one schema needs them. For now everything lives under `proto/api/`.
+Each package gets its own directory (`api/` for `app.krail.bff.proto`,
+`data/` for `app.krail.bff.proto.data`). Future shared types will land
+under `proto/core/`.
 
 ---
 

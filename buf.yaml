@@ -17,11 +17,6 @@ lint:
     # Existing protos use snake_case file names without a directory matching the
     # package; we keep them as-is in v0.1.0 and revisit in a layout pass later.
     - PACKAGE_DIRECTORY_MATCH
-    # trip.proto and the dataset protos live under proto/api/ with two
-    # different package names (`app.krail.bff.proto` vs `.proto.data`).
-    # Per request §7, v0.1.0 is "extract what exists, in place" — no
-    # restructuring. Will revisit when proto/core/ shared types land.
-    - PACKAGE_SAME_DIRECTORY
     # KRAIL-BFF's existing enum values omit the type prefix
     # (TRAIN, METRO instead of TRANSPORT_MODE_TRAIN). Renaming would be a
     # major-bump source-breaking change for both consumers — defer to a
