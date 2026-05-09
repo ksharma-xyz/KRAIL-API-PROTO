@@ -1,0 +1,153 @@
+syntax = "proto3";
+
+package app.krail.bff.proto;
+
+option java_package = "app.krail.bff.proto";
+option java_multiple_files = true;
+
+// Trip planning response — the screen-shaped contract for the trip results
+// screen in the KRAIL app. Mirrors what BFF emits from /api/v1/trip/plan
+// and /api/v1/trip/plan-proto.
+//
+// Field convention (see repo README §3 "Contract-required vs genuinely optional"):
+//   contract: required → BFF must always populate this field. Server-side
+//                        unit tests assert non-null even when upstream is missing.
+//   contract: optional → may be null/absent at runtime when not applicable.
+
+// Top-level response container.
+message JourneyList {
+  // contract: required — the response always includes a journeys list, even if empty.
+  repeated JourneyCardInfo journeys = 1;
+}
+
+// One journey option as it appears on the results screen.
+message JourneyCardInfo {
+  // contract: required — display string like "in 5 mins" / "12:30pm".
+  string time_text = 1;
+  // contract: optional — only set for trains/metros where platform is known.
+  optional string platform_text = 2;
+  // contract: optional — short platform identifier ("1", "A", "B") when known.
+  optional string platform_number = 3;
+  // contract: required — origin departure clock time, e.g. "11:30pm".
+  string origin_time = 4;
+  // contract: required — origin departure UTC, e.g. "2024-09-24T19:00:00Z".
+  string origin_utc_date_time = 5;
+  // contract: required — destination arrival clock time.
+  string destination_time = 6;
+  // contract: required — destination arrival UTC.
+  string destination_utc_date_time = 7;
+  // contract: required — total travel time string, e.g. "10 mins".
+  string travel_time = 8;
+  // contract: optional — null when the journey has no walking legs.
+  optional string total_walk_time = 9;
+  // contract: required — list of distinct transport modes/lines on this journey.
+  //                      Empty list is allowed (e.g. all-walking journey).
+  repeated TransportModeLine transport_mode_lines = 10;
+  // contract: required — at least one leg per journey.
+  repeated Leg legs = 11;
+  // contract: required — defaults to 0 when no service alerts apply.
+  int32 total_unique_service_alerts = 12;
+  // contract: optional — null when the service is on time and uneventful.
+  optional DepartureDeviation departure_deviation = 13;
+}
+
+// Display label for a transport line (e.g. "T1", "L1").
+message TransportModeLine {
+  // contract: required — display name, e.g. "T1", "L1", "M1".
+  string line_name = 1;
+  // contract: required — NSW productClass: 1=Train, 2=Metro, 4=LightRail,
+  //                      5=Bus, 7=Coach, 9=Ferry, 11=SchoolBus, 99=Walking.
+  int32 transport_mode_type = 2;
+}
+
+// One segment of a journey — either walking or a transit ride.
+message Leg {
+  // contract: required — the oneof itself is always populated; readers should
+  //                      treat the absence of a known variant as a parse error.
+  oneof leg_type {
+    WalkingLeg walking_leg = 1;
+    TransportLeg transport_leg = 2;
+  }
+}
+
+// Walking-only leg between two stops or origin/destination and a stop.
+message WalkingLeg {
+  // contract: required — duration string, e.g. "5 mins".
+  string duration = 1;
+}
+
+// Transit ride leg (train, bus, ferry, etc.).
+message TransportLeg {
+  // contract: required — line label for this segment.
+  TransportModeLine transport_mode_line = 1;
+  // contract: optional — header text like "towards Liverpool"; null when absent.
+  optional string display_text = 2;
+  // contract: required — duration string for this segment.
+  string total_duration = 3;
+  // contract: required — at least an origin + destination stop. May include
+  //                      intermediate stops on display-all-stops mode.
+  repeated Stop stops = 4;
+  // contract: optional — null when no walking interchange around this leg.
+  optional WalkInterchange walk_interchange = 5;
+  // contract: required — empty list when no alerts apply.
+  repeated ServiceAlert service_alert_list = 6;
+  // contract: optional — null when GTFS-RT realtime tracking is not available
+  //                      for this trip. When set, KRAIL can hit GTFS-RT and
+  //                      match by trip_id.
+  optional string trip_id = 7;
+}
+
+// One stop on a transit leg.
+message Stop {
+  // contract: required — display name, e.g. "Central Station, Platform 1".
+  string name = 1;
+  // contract: required — display time at this stop, e.g. "12:00pm".
+  string time = 2;
+  // contract: required — defaults to false when accessibility data is missing.
+  bool is_wheelchair_accessible = 3;
+}
+
+// A walk between two transit legs (interchange).
+message WalkInterchange {
+  // contract: required — duration string, e.g. "5 mins".
+  string duration = 1;
+  // contract: required — where the walk fits relative to the leg.
+  WalkPosition position = 2;
+}
+
+// Walk position relative to a transport leg.
+enum WalkPosition {
+  // contract: default for unknown values from older clients.
+  WALK_POSITION_UNSPECIFIED = 0;
+  BEFORE = 1;
+  AFTER = 2;
+  // "IDEST" ≈ "id est" — entire leg is walking.
+  IDEST = 3;
+}
+
+// Service alert (delay, disruption, planned work, etc.).
+message ServiceAlert {
+  // contract: required — stable alert ID for client-side deduping.
+  string id = 1;
+  // contract: required — short headline.
+  string subtitle = 2;
+  // contract: required — body text.
+  string content = 3;
+  // contract: required — severity string: "veryLow" | "low" | "normal" | "high" | "veryHigh".
+  string priority = 4;
+  // contract: optional — link to NSW alert page; null when not provided.
+  optional string url = 5;
+}
+
+// Departure deviation — surfaces realtime "running 2 min late" badges.
+message DepartureDeviation {
+  // contract: required — exactly one variant set.
+  oneof deviation_type {
+    // Display string, e.g. "5 mins late".
+    string late = 1;
+    // Display string, e.g. "2 mins early".
+    string early = 2;
+    // True when the service is on time.
+    bool on_time = 3;
+  }
+}

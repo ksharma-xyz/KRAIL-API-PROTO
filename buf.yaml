@@ -1,0 +1,26 @@
+version: v2
+
+# buf v2 module config. Source of truth for the proto contract that BFF
+# emits and KRAIL consumes. CI runs `buf lint` + `buf breaking` against
+# the previous git tag. See .github/workflows/ci.yml.
+
+modules:
+  - path: proto
+
+lint:
+  use:
+    - STANDARD
+  except:
+    # KRAIL-BFF protos use a flat package per file (no per-version sub-package).
+    # Versioning is at the repo level via SemVer git tags, not per-package.
+    - PACKAGE_VERSION_SUFFIX
+    # Existing protos use snake_case file names without a directory matching the
+    # package; we keep them as-is in v0.1.0 and revisit in a layout pass later.
+    - PACKAGE_DIRECTORY_MATCH
+
+breaking:
+  use:
+    # WIRE_JSON catches anything that breaks JSON or wire-binary compatibility:
+    # field number reuse, type changes, enum-value renames, oneof shape changes.
+    # This is the strict mode the request doc §3 calls for.
+    - WIRE_JSON

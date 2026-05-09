@@ -1,0 +1,26 @@
+# GitHub Pages config for KRAIL-API-PROTO docs site.
+# Build runs server-side on github.com; no Ruby/Jekyll setup needed locally.
+
+title: KRAIL-API-PROTO
+description: >
+  The shared protobuf contract between KRAIL-BFF (the backend-for-frontend)
+  and the KRAIL Sydney transit app. Versioned via SemVer git tags;
+  consumed as a git submodule.
+
+# Cayman is GitHub's default cover-style theme — clean and readable for
+# small docs sites. Swap to `just-the-docs` if we ever want sidebar nav.
+theme: jekyll-theme-cayman
+
+show_downloads: false
+
+# So pages can link via { site.github.repository_url } etc.
+repository: ksharma-xyz/KRAIL-API-PROTO
+
+# Pull the README's badges + canonical link into the rendered site.
+github:
+  is_project_page: true
+
+# Default to showing Markdown headings as collapsible sections.
+markdown: kramdown
+kramdown:
+  toc_levels: 2..3

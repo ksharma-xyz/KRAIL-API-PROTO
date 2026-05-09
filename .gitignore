@@ -1,0 +1,18 @@
+### IntelliJ ###
+.idea/
+*.iml
+*.ipr
+*.iws
+
+### macOS ###
+.DS_Store
+
+### buf ###
+.buf/
+
+### Gradle / Wire smoke ###
+.gradle/
+build/
+
+### Generated artifacts ###
+*.descriptor.bin

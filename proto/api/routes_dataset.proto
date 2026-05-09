@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package app.krail.bff.proto.data;
+
+import "api/stops_dataset.proto";
+
+option java_package = "app.krail.bff.proto.data";
+option java_multiple_files = true;
+
+// Versioned routes dataset distributed via GitHub Releases. The KRAIL app
+// downloads on cold start (and every 24h) when the manifest version changes,
+// and runs route-number search locally against this file (e.g. typing "333"
+// to find bus 333).
+//
+// Mirrors the existing KRAIL `NswBusRoute.proto` shape so the migration is
+// mechanical: same nested structure (Group → Variant → Trip → stop sequence),
+// same lookup pattern. New: `transport_mode` per RouteGroup so trains / metro /
+// ferries can fit the same schema later (KRAIL today only ships bus routes).
+message RoutesDataset {
+  // contract: required — YYYYMMDD or semver tag identifying this dataset build.
+  string version = 1;
+  // contract: required — ISO-8601 UTC timestamp of when this dataset was built.
+  string generated_at = 2;
+  // contract: required — CC BY 4.0 attribution text.
+  string attribution = 3;
+  // contract: required — non-empty list of routes.
+  repeated RouteGroup routes = 4;
+}
+
+// All variants of a single route number across operators.
+message RouteGroup {
+  // contract: required — display short name, e.g. "333", "T1", "L1".
+  string route_short_name = 1;
+  // contract: required — primary mode for this short name.
+  //                      Uses TransportMode from stops_dataset.proto.
+  TransportMode mode = 2;
+  // contract: required — at least one variant per group.
+  repeated RouteVariant variants = 3;
+}
+
+// One operator-specific implementation of a route number.
+message RouteVariant {
+  // contract: required — e.g. "2504_702" (NSW operator-prefixed route ID).
+  string route_id = 1;
+  // contract: required — human-readable e.g. "Blacktown to Seven Hills".
+  string route_name = 2;
+  // contract: required — at least one trip per variant (typically two: each direction).
+  repeated TripOption trips = 3;
+}
+
+// One representative trip on a route variant.
+message TripOption {
+  // contract: required — representative trip for this direction.
+  string trip_id = 1;
+  // contract: required — destination headsign, e.g. "Blacktown to Seven Hills".
+  string headsign = 2;
+  // contract: required — ordered list of stop IDs; references DatasetStop.stop_id.
+  //                      Empty list is allowed only when stop sequence is unknown
+  //                      (rare; treat as a degraded entry).
+  repeated string stop_ids = 3;
+}

@@ -1,0 +1,139 @@
+name: release
+
+# Two trigger modes:
+#   1. tag push (v*.*.*) — runs validation + creates a GitHub Release with
+#      auto-generated notes.
+#   2. workflow_dispatch — interactive bump. Pick {patch, minor, major};
+#      this workflow updates version.txt, opens a release PR, and on merge
+#      tags + releases.
+#
+# The interactive flow keeps the human in the loop on "what version is this?"
+# while the mechanical bits (lint, breaking-check, tag, release notes) are
+# fully automated.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: 'Version bump'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # === MODE 1: triggered by a tag push (manual `git tag vX.Y.Z && git push --tags`,
+  # or by the bump-pr → merge → tag flow further down). ===
+  release-on-tag:
+    if: startsWith(github.ref, 'refs/tags/v')
+    name: Release on tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          version: '1.47.2'
+      - name: Validate version.txt matches tag
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          tag_version="${tag#v}"
+          file_version=$(tr -d '[:space:]' < version.txt)
+          if [ "$tag_version" != "$file_version" ]; then
+            echo "::error::tag $tag does not match version.txt ($file_version)"; exit 1
+          fi
+      - name: buf lint
+        run: buf lint
+      - name: buf build
+        run: buf build -o /tmp/image.bin
+      - name: Resolve previous tag for breaking check
+        id: prev-tag
+        run: |
+          current="${GITHUB_REF#refs/tags/}"
+          # Find the most recent tag *before* the current one.
+          prev=$(git tag --list 'v*.*.*' --sort=-version:refname | grep -v "^${current}\$" | head -n1 || true)
+          if [ -z "$prev" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=$prev" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: buf breaking against previous tag (informational)
+        if: steps.prev-tag.outputs.skip == 'false'
+        # Don't fail the release on breaking changes — the PR-time CI already
+        # gated this. Print for the audit trail in case a major bump landed.
+        continue-on-error: true
+        run: buf breaking --against ".git#tag=${{ steps.prev-tag.outputs.tag }}"
+      - name: Bundle proto/ tree as release asset
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          tar -czf "krail-api-proto-${tag}.tar.gz" proto LICENSE README.md version.txt
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          gh release create "$tag" \
+            --title "$tag" \
+            --generate-notes \
+            "krail-api-proto-${tag}.tar.gz"
+
+  # === MODE 2: workflow_dispatch — open a PR that bumps version.txt.
+  # Merging the PR (and pushing the tag) triggers MODE 1. ===
+  open-bump-pr:
+    if: github.event_name == 'workflow_dispatch'
+    name: Open version-bump PR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compute next version
+        id: next
+        run: |
+          current=$(tr -d '[:space:]' < version.txt)
+          IFS=. read -r major minor patch <<< "$current"
+          case "${{ inputs.bump_type }}" in
+            patch) patch=$((patch + 1));;
+            minor) minor=$((minor + 1)); patch=0;;
+            major) major=$((major + 1)); minor=0; patch=0;;
+            *) echo "::error::unknown bump_type"; exit 1;;
+          esac
+          next="${major}.${minor}.${patch}"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "branch=release/v$next" >> "$GITHUB_OUTPUT"
+          echo "Next version: v$next"
+      - name: Create branch + commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "${{ steps.next.outputs.branch }}"
+          echo "${{ steps.next.outputs.version }}" > version.txt
+          git add version.txt
+          git commit -m "chore(release): bump to v${{ steps.next.outputs.version }}"
+          git push --set-upstream origin "${{ steps.next.outputs.branch }}"
+      - name: Open PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --title "chore(release): v${{ steps.next.outputs.version }}" \
+            --body "Bump \`version.txt\` to v${{ steps.next.outputs.version }} (${{ inputs.bump_type }} bump).
+
+After merging this PR, push the tag:
+\`\`\`
+git tag v${{ steps.next.outputs.version }}
+git push origin v${{ steps.next.outputs.version }}
+\`\`\`
+That triggers the release job which creates the GitHub Release with auto-generated notes." \
+            --label "release"
