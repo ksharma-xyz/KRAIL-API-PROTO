@@ -125,15 +125,24 @@ jobs:
       - name: Open PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT_VERSION: ${{ steps.next.outputs.version }}
+          BUMP_TYPE: ${{ inputs.bump_type }}
         run: |
-          gh pr create \
-            --title "chore(release): v${{ steps.next.outputs.version }}" \
-            --body "Bump \`version.txt\` to v${{ steps.next.outputs.version }} (${{ inputs.bump_type }} bump).
+          # Write the PR body to a file so the multi-line content doesn't
+          # collide with the YAML pipe block's indentation rules.
+          cat > /tmp/pr-body.md <<EOF
+          Bump \`version.txt\` to v${NEXT_VERSION} (${BUMP_TYPE} bump).
 
-After merging this PR, push the tag:
-\`\`\`
-git tag v${{ steps.next.outputs.version }}
-git push origin v${{ steps.next.outputs.version }}
-\`\`\`
-That triggers the release job which creates the GitHub Release with auto-generated notes." \
+          After merging this PR, push the tag:
+
+          \`\`\`bash
+          git tag v${NEXT_VERSION}
+          git push origin v${NEXT_VERSION}
+          \`\`\`
+
+          That triggers the release job which creates the GitHub Release with auto-generated notes.
+          EOF
+          gh pr create \
+            --title "chore(release): v${NEXT_VERSION}" \
+            --body-file /tmp/pr-body.md \
             --label "release"

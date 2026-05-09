@@ -29,6 +29,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+        with:
+          # Auto-enables Pages on the repo if the API call from outside CI
+          # didn't beat the workflow to it (race condition we hit on first push).
+          enablement: true
       - uses: actions/jekyll-build-pages@v1
         with:
           source: ./docs
