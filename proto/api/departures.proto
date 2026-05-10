@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package app.krail.bff.proto;
+
+import "api/trip.proto";  // Coord
+
+option java_package = "app.krail.bff.proto";
+option java_multiple_files = true;
+
+// Screen-shaped response for the KRAIL departures board.
+//
+// BFF endpoint: GET /api/v1/stops/{stopId}/departures-proto
+//
+// Field convention (see repo README contract):
+//   contract: required → BFF must always populate this field. Server-side
+//                        unit tests assert non-null even when upstream is missing.
+//   contract: optional → may be null/absent at runtime when not applicable.
+
+// Top-level response.
+message DepartureBoardResponse {
+  // contract: required — the stop the departures are for. Echoes the
+  //                      requested stopId with NSW's resolved name.
+  StopRef stop = 1;
+  // contract: required — empty list when no upcoming departures within
+  //                      NSW's window. Order is next-first (NSW's order).
+  repeated DepartureRow departures = 2;
+}
+
+// Reference to a transit stop.
+message StopRef {
+  // contract: required — NSW stop id, e.g. "200060". Echoes the requested id.
+  string id = 1;
+  // contract: required — display name (NSW disassembledName/name).
+  string name = 2;
+  // contract: optional — point-on-map. Null when NSW didn't publish.
+  optional Coord coord = 3;
+}
+
+// One row in the departure board.
+message DepartureRow {
+  // contract: required — display label + mode for this departure.
+  TransitLine line = 1;
+  // contract: required — destination headsign, e.g. "Bondi Junction".
+  string destination = 2;
+  // contract: required — departure time (planned + optional realtime estimate).
+  StopTime time = 3;
+  // contract: optional — platform / stand text when known. Null for buses
+  //                      without a numbered stand.
+  optional string platform_text = 4;
+  // contract: optional — pre-computed display label like "today" /
+  //                      "tomorrow" / "in 2 days". KRAIL renders directly.
+  optional string date_label = 5;
+  // contract: optional — GTFS-RT trip id. Set when realtime trackable so
+  //                      KRAIL can match against /v[1|2]/gtfs/realtime/.
+  optional string trip_id = 6;
+  // contract: required — true when NSW's `isRealtimeControlled` is true.
+  //                      Defaults to false.
+  bool is_realtime = 7;
+}
+
+// Display label for a transit line. Mirrors the shape used by
+// trip.proto's TransportModeLine, with an added optional color tint.
+message TransitLine {
+  // contract: required — display name like "T1", "L1", "M1", "430".
+  string display_name = 1;
+  // contract: required — NSW productClass numeric code: 1=Train, 2=Metro,
+  //                      4=LightRail, 5=Bus, 7=Coach, 9=Ferry, 11=SchoolBus.
+  //                      Same encoding as trip.proto's transport_mode_type.
+  int32 transport_mode_type = 2;
+  // contract: optional — operator-specific tint hex like "#F4A21E".
+  //                      Null when NSW doesn't provide a colour.
+  optional string color_hex = 3;
+}
+
+// Planned time + optional realtime estimate.
+message StopTime {
+  // contract: required — ISO-8601 UTC, scheduled time.
+  string planned_utc = 1;
+  // contract: optional — ISO-8601 UTC, realtime estimate when available.
+  optional string estimated_utc = 2;
+}

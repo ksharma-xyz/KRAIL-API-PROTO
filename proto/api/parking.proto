@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package app.krail.bff.proto;
+
+import "api/trip.proto";  // Coord
+
+option java_package = "app.krail.bff.proto";
+option java_multiple_files = true;
+
+// Screen-shaped response for the KRAIL Park & Ride home cards.
+//
+// BFF endpoint: GET /api/v1/parking/availability-proto
+//
+// Two query modes (mutually exclusive — if both are sent, stopIds wins):
+//   ?ids=486,487            — facility-id batch.
+//                             Top-level `facilities` populated.
+//                             `stops` and `unknown_stops` empty.
+//   ?stopIds=275010,2155384 — stop-id resolution.
+//                             `stops` populated; `unknown_stops` lists
+//                             stops with no mapping. Top-level
+//                             `facilities` empty.
+//
+// Per-facility upstream errors land in `errors` (top-level for ?ids=,
+// per-stop for ?stopIds=).
+message ParkingAvailabilityResponse {
+  // contract: required — populated for ?ids= mode. Map<facilityId, FacilityAvailability>.
+  //                      Empty map for ?stopIds= mode.
+  map<string, FacilityAvailability> facilities = 1;
+  // contract: required — top-level errors for ?ids= mode (per-facility
+  //                      upstream failures). Empty map for ?stopIds= mode.
+  map<string, ApiError> errors = 2;
+  // contract: required — populated for ?stopIds= mode. Map<stopId, StopParkingBlock>.
+  //                      Empty map for ?ids= mode.
+  map<string, StopParkingBlock> stops = 3;
+  // contract: required — stops requested but not in the BFF lookup table
+  //                      (?stopIds= mode only). Empty list for ?ids= mode.
+  repeated string unknown_stops = 4;
+  // contract: required — correlation id for this request.
+  string correlation_id = 5;
+}
+
+// Per-stop wrapper for ?stopIds= mode.
+message StopParkingBlock {
+  // contract: required — facility id → availability. Order matches the
+  //                      lookup-table order for the stop.
+  map<string, FacilityAvailability> facilities = 1;
+  // contract: required — per-facility upstream errors for this stop.
+  map<string, ApiError> errors = 2;
+}
+
+// Single facility's availability snapshot. Screen-shaped — only the
+// fields KRAIL renders, not the full NSW carpark response.
+message FacilityAvailability {
+  // contract: required — NSW facility id, e.g. "486".
+  string facility_id = 1;
+  // contract: required — display name, e.g. "Park&Ride - Ashfield".
+  string facility_name = 2;
+  // contract: required — total parking spots at the facility. Defaults to
+  //                      0 when NSW didn't return it.
+  int32 total_spots = 3;
+  // contract: required — currently occupied spots (NSW's occupancy.total).
+  //                      Defaults to 0 when NSW returns null.
+  int32 occupied_spots = 4;
+  // contract: optional — geographic coordinates. Null when NSW didn't
+  //                      provide them.
+  optional Coord location = 5;
+  // contract: optional — suburb name like "Ashfield". Null when missing.
+  optional string suburb = 6;
+  // contract: optional — street address. Null when missing.
+  optional string address = 7;
+  // contract: optional — ISO-8601 timestamp of the latest update from NSW
+  //                      (their MessageDate). Null when missing.
+  optional string updated_at = 8;
+}
+
+// Generic API error envelope used for per-facility / per-stop failures.
+message ApiError {
+  // contract: required — stable code like "upstream_404",
+  //                      "invalid_facility_id", "daily_budget_exceeded".
+  //                      Use this in app logic, not `message`.
+  string code = 1;
+  // contract: required — human-readable message.
+  string message = 2;
+}
