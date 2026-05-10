@@ -74,6 +74,11 @@ message Leg {
 message WalkingLeg {
   // contract: required — duration string, e.g. "5 mins".
   string duration = 1;
+  // contract: optional — polyline points for the walk path. Order: from
+  //                      previous-leg destination to next-leg origin.
+  //                      May be empty when NSW returns walk-step
+  //                      instructions but no geometry.
+  repeated Coord coords = 2;
 }
 
 // Transit ride leg (train, bus, ferry, etc.).
@@ -95,6 +100,11 @@ message TransportLeg {
   //                      for this trip. When set, KRAIL can hit GTFS-RT and
   //                      match by trip_id.
   optional string trip_id = 7;
+  // contract: optional — polyline points for the transit ride from origin
+  //                      to destination. Order: origin → destination. Empty
+  //                      list when NSW didn't return geometry (e.g. some
+  //                      bus routes). Used by the journey-map screen.
+  repeated Coord coords = 8;
 }
 
 // One stop on a transit leg.
@@ -105,6 +115,10 @@ message Stop {
   string time = 2;
   // contract: required — defaults to false when accessibility data is missing.
   bool is_wheelchair_accessible = 3;
+  // contract: optional — point-on-map for this stop. NSW returns geometry
+  //                      for most stops but not all (e.g. some planning-only
+  //                      stops have no published coordinate).
+  optional Coord coord = 4;
 }
 
 // A walk between two transit legs (interchange).
@@ -113,6 +127,23 @@ message WalkInterchange {
   string duration = 1;
   // contract: required — where the walk fits relative to the leg.
   WalkPosition position = 2;
+  // contract: optional — walking-interchange polyline (e.g. Wynyard
+  //                      platform → underground exit). Empty list when
+  //                      NSW returns no geometry for the walk.
+  repeated Coord coords = 3;
+}
+
+// Geographic point in decimal degrees, EPSG:4326. Used for transit-leg
+// polylines, walking-interchange polylines, and per-stop pins.
+//
+// Defined locally in trip.proto rather than imported from
+// stops_dataset.proto's LatLng to keep v0.2.0 small. If a third schema
+// needs lat/lng, we move LatLng to proto/core/ in a follow-up.
+message Coord {
+  // contract: required — latitude in decimal degrees.
+  double lat = 1;
+  // contract: required — longitude in decimal degrees.
+  double lon = 2;
 }
 
 // Walk position relative to a transport leg.
