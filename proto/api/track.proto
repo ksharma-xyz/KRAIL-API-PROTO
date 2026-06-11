@@ -254,6 +254,22 @@ message StopProgress {
   // contract: optional — map pin coordinates, only with include_geometry.
   double latitude = 7;
   double longitude = 8;
+
+  // Where this stop sits relative to the USER'S journey (origin →
+  // destination from the request). The response carries the vehicle's
+  // full run; the client chooses whether to render the BEFORE/AFTER
+  // stops (e.g. collapsed "continues to N more stops"). When the
+  // request's endpoint ids don't match the trip's stop sequence the
+  // BFF can't tell — every stop is then SEGMENT_UNSPECIFIED and the
+  // client should render all stops normally.
+  enum Segment {
+    SEGMENT_UNSPECIFIED = 0;
+    BEFORE_JOURNEY = 1;
+    JOURNEY = 2;
+    AFTER_JOURNEY = 3;
+  }
+  // contract: required.
+  Segment segment = 9;
 }
 
 message LegGeometry {
