@@ -96,15 +96,23 @@ message TransportLeg {
   optional WalkInterchange walk_interchange = 5;
   // contract: required — empty list when no alerts apply.
   repeated ServiceAlert service_alert_list = 6;
-  // contract: optional — null when GTFS-RT realtime tracking is not available
-  //                      for this trip. When set, KRAIL can hit GTFS-RT and
-  //                      match by trip_id.
+  // contract: optional — legacy concatenation of transportation_id +
+  //                      realtime_trip_id. Prefer the split fields below;
+  //                      kept for decoder back-compat.
   optional string trip_id = 7;
   // contract: optional — polyline points for the transit ride from origin
   //                      to destination. Order: origin → destination. Empty
   //                      list when NSW didn't return geometry (e.g. some
   //                      bus routes). Used by the journey-map screen.
   repeated Coord coords = 8;
+  // contract: optional — stable NSW route id for this leg, e.g.
+  //                      "nsw:020T1:W:R:sj2" (transportation.id). Used for
+  //                      journey identity/dedupe and deep links.
+  optional string transportation_id = 9;
+  // contract: optional — GTFS realtime trip id (RealtimeTripId), the lock
+  //                      key for live tracking (TrackRequest.TrackLeg).
+  //                      Null when the service has no realtime trip.
+  optional string realtime_trip_id = 10;
 }
 
 // One stop on a transit leg.
