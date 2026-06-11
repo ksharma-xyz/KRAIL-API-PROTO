@@ -1,0 +1,276 @@
+syntax = "proto3";
+
+package app.krail.bff.proto;
+
+option java_package = "app.krail.bff.proto";
+option java_multiple_files = true;
+
+// Live trip tracking — the screen-shaped contract for the track-trip and
+// journey-map screens. Mirrors what the BFF emits from
+// POST /api/v1/track/snapshot (request body: TrackRequest, response:
+// TrackResponse; protobuf by default, JSON via Accept: application/json).
+//
+// Design doc: KRAIL-BFF docs/reference/TRACKING_DESIGN.md.
+//
+// Hard rule encoded by this contract: tracking never re-plans. A trip is
+// locked to its GTFS trip_id at share/track time; every field here derives
+// from GTFS-Realtime / GTFS-static sources keyed by that id. The client
+// needs no GTFS knowledge — fields are render-ready.
+//
+// Field convention (see repo README §3):
+//   contract: required → BFF always populates, even on upstream failure.
+//   contract: optional → absent when the data genuinely doesn't exist.
+
+// ---------------------------------------------------------------------------
+// Request
+// ---------------------------------------------------------------------------
+
+message TrackRequest {
+  // contract: required — transit legs only (no walking legs). The BFF
+  // rejects requests with 0 or more than 8 legs.
+  repeated TrackLeg legs = 1;
+
+  // Set true on the FIRST poll only: the response then includes
+  // LegTracking.geometry and StopProgress coordinates / expected occupancy.
+  // Steady-state polls leave this false and stay small (~2 KB).
+  bool include_geometry = 2;
+
+  message TrackLeg {
+    // contract: required — client correlation key, echoed back verbatim in
+    // LegTracking.leg_ref. Any non-empty string ≤ 64 chars.
+    string leg_ref = 1;
+
+    // contract: required — the GTFS trip id from the Trip Planner response
+    // (transportation.properties.RealtimeTripId). Verified byte-identical
+    // to GTFS-R trip ids across modes. This is the lock key.
+    string realtime_trip_id = 2;
+
+    // contract: optional — stable route id (transportation.id, e.g.
+    // "nsw:020T1:W:R:sj2"). Used by fallback matching tiers only.
+    string transportation_id = 3;
+
+    // contract: required — Trip Planner product class; selects the
+    // GTFS-R feed (1 train, 2 metro, 4 light rail, 5 bus, 7 coach,
+    // 9 ferry, 11 school bus).
+    int32 product_class = 4;
+
+    // contract: required — boarding / alighting stop ids, used to slice
+    // the trip's full stop sequence to the user's journey segment.
+    string origin_stop_id = 5;
+    string destination_stop_id = 6;
+
+    // contract: required — service date the trip_id belongs to, YYYYMMDD
+    // in Sydney time. Trip ids are per-service-day; a past date yields
+    // Status.EXPIRED.
+    string service_date = 7;
+
+    // contract: optional — planned departure ISO-8601 UTC; disambiguates
+    // fallback matching and pre-departure expiry checks.
+    string planned_departure_utc = 8;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Response
+// ---------------------------------------------------------------------------
+
+message TrackResponse {
+  // contract: required — server clock at assembly, epoch seconds UTC.
+  int64 fetched_at_epoch_sec = 1;
+
+  // contract: required — the client MUST wait at least this many seconds
+  // before the next poll. Server-tuned cadence (default 30).
+  int32 suggested_poll_seconds = 2;
+
+  // contract: required — one entry per requested leg, same order as the
+  // request. A leg that failed resolves to status, never to absence.
+  repeated LegTracking legs = 3;
+}
+
+message LegTracking {
+  // contract: required — echoes TrackRequest.TrackLeg.leg_ref.
+  string leg_ref = 1;
+
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    // Matched a live vehicle; expect vehicle/fleet/occupancy/stops below.
+    TRACKING = 1;
+    // Trip exists in today's feed but the vehicle hasn't started; stops
+    // and times may be present (from TripUpdates), no position yet.
+    NOT_STARTED = 2;
+    // Service should be running but no realtime match was found.
+    NO_REALTIME = 3;
+    // Trip completed (vehicle gone, all stops in the past).
+    ENDED = 4;
+    // service_date is in the past — e.g. a share link opened tomorrow.
+    EXPIRED = 5;
+    // Upstream feed unavailable; retry next poll. Other legs unaffected.
+    UPSTREAM_UNAVAILABLE = 6;
+  }
+  // contract: required.
+  Status status = 2;
+
+  // contract: optional — present when a live vehicle is matched.
+  VehicleLive vehicle = 3;
+
+  // contract: optional — present when fleet/model info is derivable.
+  FleetInfo fleet = 4;
+
+  // contract: optional — live occupancy; see OccupancyInfo for tiers.
+  OccupancyInfo occupancy = 5;
+
+  // contract: required when status is TRACKING/NOT_STARTED — the
+  // origin→destination stop timeline. Empty for other statuses.
+  repeated StopProgress stops = 6;
+
+  // contract: optional — overall delay in seconds; negative = early.
+  sint32 delay_seconds = 7;
+  // Distinguishes "no delay info" from "exactly on time".
+  bool has_delay = 8;
+
+  // contract: optional — only populated when TrackRequest.include_geometry
+  // was true.
+  LegGeometry geometry = 9;
+}
+
+message VehicleLive {
+  // contract: required (within this message).
+  double latitude = 1;
+  double longitude = 2;
+
+  // contract: optional — sydneytrains feeds omit bearing/speed; metro,
+  // buses and light rail provide them. has_* fields distinguish 0 from
+  // absent (proto3 scalar semantics).
+  float bearing_degrees = 3;
+  bool has_bearing = 4;
+  float speed_mps = 5;
+  bool has_speed = 6;
+
+  // contract: required — when the feed measured this position, epoch
+  // seconds UTC. The UI must show data age; never render a stale dot
+  // as current.
+  int64 measured_at_epoch_sec = 7;
+
+  enum StopRelation {
+    STOP_RELATION_UNSPECIFIED = 0;
+    INCOMING_AT = 1;
+    STOPPED_AT = 2;
+    IN_TRANSIT_TO = 3;
+  }
+  // contract: optional — UNSPECIFIED when the feed omits current_status.
+  StopRelation stop_relation = 8;
+
+  // contract: optional — stop id the relation refers to.
+  string at_or_next_stop_id = 9;
+}
+
+message FleetInfo {
+  // contract: required (within this message) — render-ready name:
+  // "Waratah", "Mariyung", "Alstom Metropolis", a ferry vessel name, etc.
+  string display_name = 1;
+
+  // contract: optional — train set-type letter ("A", "T", "H", ...).
+  string set_code = 2;
+
+  // contract: optional — 0 means unknown.
+  int32 car_count = 3;
+
+  enum Source {
+    SOURCE_UNSPECIFIED = 0;
+    // Parsed from the scheduled trip_id (set-type table).
+    SCHEDULED = 1;
+    // From the live TfNSW vehicle descriptor — reflects substitutions.
+    LIVE = 2;
+  }
+  // contract: required (within this message).
+  Source source = 4;
+}
+
+message OccupancyInfo {
+  // Mirrors GTFS-Realtime OccupancyStatus, shifted +1 so 0 stays "unknown".
+  enum Level {
+    LEVEL_UNSPECIFIED = 0;
+    EMPTY = 1;
+    MANY_SEATS_AVAILABLE = 2;
+    FEW_SEATS_AVAILABLE = 3;
+    STANDING_ROOM_ONLY = 4;
+    CRUSHED_STANDING_ROOM_ONLY = 5;
+    FULL = 6;
+    NOT_ACCEPTING_PASSENGERS = 7;
+  }
+
+  // contract: optional — whole-vehicle level (tier 2). UNSPECIFIED when
+  // the feed has no vehicle-level occupancy.
+  Level overall = 1;
+
+  // contract: optional — per-carriage levels (tier 1), ordered by
+  // sequence. Empty when the feed lacks per-carriage data; the client
+  // then falls back to `overall`, then hides occupancy entirely.
+  repeated CarOccupancy cars = 2;
+
+  message CarOccupancy {
+    // contract: required — 1-based position in direction of travel.
+    int32 sequence = 1;
+    // contract: optional — car label from the feed (e.g. "DTC1").
+    string label = 2;
+    // contract: required — may be LEVEL_UNSPECIFIED for an individual car.
+    Level level = 3;
+    // contract: optional — quiet carriage flag (trains/metro).
+    bool quiet_carriage = 4;
+    // Phase 3 (vehicle-boardings data): whether this car reaches the
+    // platform at the user's boarding stop. Absent until then.
+    bool reaches_platform = 5;
+    bool has_reaches_platform = 6;
+  }
+}
+
+message StopProgress {
+  // contract: required.
+  string stop_id = 1;
+  // contract: required — render-ready stop name from the stops dataset.
+  string stop_name = 2;
+
+  // contract: optional — epoch seconds UTC; 0 = unknown.
+  int64 planned_epoch_sec = 3;
+  // contract: optional — live estimate from TripUpdates; moves between polls.
+  int64 estimated_epoch_sec = 4;
+
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    DEPARTED = 1;
+    CURRENT = 2;
+    UPCOMING = 3;
+    SKIPPED = 4;
+  }
+  // contract: required.
+  State state = 5;
+
+  // contract: optional — forecast load departing this stop. UI rule:
+  // render ONLY while state is CURRENT or UPCOMING; a forecast for a
+  // departed stop is noise. Ships once (with geometry); hiding as states
+  // change is the client's job.
+  OccupancyInfo.Level expected_occupancy = 6;
+
+  // contract: optional — map pin coordinates, only with include_geometry.
+  double latitude = 7;
+  double longitude = 8;
+}
+
+message LegGeometry {
+  // contract: required (within this message) — the path the vehicle
+  // travels for this leg, encoded with the Google polyline algorithm at
+  // precision 5 (~10x smaller than repeated lat/lng pairs).
+  string encoded_polyline = 1;
+
+  enum Source {
+    SOURCE_UNSPECIFIED = 0;
+    // GTFS static shapes.txt derived dataset (preferred).
+    GTFS_SHAPES = 1;
+    // Trip Planner leg coords (enrichment path).
+    TRIP_PLANNER = 2;
+    // Last resort: straight lines connecting the stop coordinates.
+    STOP_STRAIGHT_LINES = 3;
+  }
+  // contract: required (within this message).
+  Source source = 2;
+}
