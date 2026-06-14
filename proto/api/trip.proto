@@ -127,6 +127,17 @@ message Stop {
   //                      for most stops but not all (e.g. some planning-only
   //                      stops have no published coordinate).
   optional Coord coord = 4;
+  // contract: optional — TfNSW stop/platform identifier (e.g. "2007143").
+  //                      Used by the client to build the stop-coordinate map
+  //                      for journey-map display. Absent when NSW does not
+  //                      publish a global ID for this stop.
+  optional string stop_id = 5;
+  // contract: optional — ISO-8601 UTC departure (or arrival for the final
+  //                      stop) time for this stop, e.g. "2025-04-19T14:30:00Z".
+  //                      Used by the client for countdown, GTFS-RT delay
+  //                      application, and stop-sequence ordering. Absent when
+  //                      NSW does not publish timing for this stop.
+  optional string utc_time = 6;
 }
 
 // A walk between two transit legs (interchange).
