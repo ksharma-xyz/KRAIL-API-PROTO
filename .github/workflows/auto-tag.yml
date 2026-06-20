@@ -1,0 +1,66 @@
+name: auto-tag
+
+# Fires on every push to main. If version.txt changed and the version it
+# contains doesn't already have a matching tag, creates and pushes the tag.
+#
+# This is the missing link in the release flow: the release.yml dispatch
+# workflow opens a version-bump PR; merging it triggers THIS workflow, which
+# creates the tag. The tag push then triggers release-on-tag in release.yml.
+#
+# End-to-end proto release flow:
+#   1. Make proto changes on a branch, update version.txt, open a PR.
+#   2. Merge the PR → auto-tag fires → tag vX.Y.Z created + pushed.
+#   3. Tag push → release.yml release-on-tag fires → GitHub Release created.
+#   4. New tag → proto-bump fires in KRAIL-BFF and KRAIL → bump PRs opened.
+#   5. Review + merge both bump PRs → both repos pinned to new proto version.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'version.txt'
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    name: Create version tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version
+        id: ver
+        run: |
+          version=$(tr -d '[:space:]' < version.txt)
+          if [ -z "$version" ]; then
+            echo "::error::version.txt is empty"; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version"    >> "$GITHUB_OUTPUT"
+
+      - name: Skip if tag already exists
+        id: gate
+        run: |
+          tag="v${{ steps.ver.outputs.version }}"
+          git fetch --tags --quiet
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists — nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Will create $tag."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create and push tag
+        if: steps.gate.outputs.skip == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          tag="v${{ steps.ver.outputs.version }}"
+          git tag "$tag"
+          git push origin "$tag"
+          echo "Tagged and pushed $tag."

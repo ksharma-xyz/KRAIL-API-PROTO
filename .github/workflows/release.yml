@@ -87,6 +87,15 @@ jobs:
             --title "$tag" \
             --generate-notes \
             "krail-api-proto-${tag}.tar.gz"
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Publish proto JAR to GitHub Packages
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./gradlew publish
 
   # === MODE 2: workflow_dispatch — open a PR that bumps version.txt.
   # Merging the PR (and pushing the tag) triggers MODE 1. ===
