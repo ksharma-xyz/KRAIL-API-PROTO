@@ -29,6 +29,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  packages: write
 
 jobs:
   # === MODE 1: triggered by a tag push (manual `git tag vX.Y.Z && git push --tags`,
